@@ -49,7 +49,7 @@ class DataNormalizerHandler(Handler):
             self.logger.error(error_msg)
             raise ValueError(error_msg)
             
-        x_data = context.x_data.copy()
+        x_data = context.x_data.astype(np.float64)
         
         if self.method == 'standard':
             self.logger.info("Applying standard normalization (z-score)")

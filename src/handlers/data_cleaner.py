@@ -64,10 +64,23 @@ class DataCleanerHandler(Handler):
         original_shape = data.shape
 
         if self.drop_duplicates:
-            duplicates_count = data.duplicated().sum()
-            if duplicates_count > 0:
-                self.logger.info(f"Dropping {duplicates_count} duplicate rows")
-                data = data.drop_duplicates()
+            cols_to_check = [col for col in data.columns 
+                           if not col.startswith('Unnamed') and 
+                           not col in ['Ищет работу на должность:', 
+                                      'Последенее/нынешнее место работы',
+                                      'Последеняя/нынешняя должность',
+                                      'Обновление резюме']]
+            
+            if cols_to_check:
+                duplicates_count = data.duplicated(subset=cols_to_check).sum()
+                if duplicates_count > 0:
+                    self.logger.info(f"Dropping {duplicates_count} duplicate rows (based on key fields)")
+                    data = data.drop_duplicates(subset=cols_to_check)
+            else:
+                duplicates_count = data.duplicated().sum()
+                if duplicates_count > 0:
+                    self.logger.info(f"Dropping {duplicates_count} duplicate rows")
+                    data = data.drop_duplicates()
 
         missing_count = data.isnull().sum().sum()
         if missing_count > 0:

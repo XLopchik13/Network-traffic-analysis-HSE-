@@ -64,7 +64,7 @@ def main() -> None:
         pipeline = PipelineBuilder.create_default_pipeline(
             input_file=input_path,
             output_dir=output_dir,
-            target_column='ЗП',
+            target_column='salary',
             logger=logger
         )
 

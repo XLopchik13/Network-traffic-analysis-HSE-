@@ -9,6 +9,7 @@ from .core.pipeline_context import PipelineContext
 from .handlers.data_loader import DataLoaderHandler
 from .handlers.data_cleaner import DataCleanerHandler
 from .handlers.feature_engineering import FeatureEngineeringHandler
+from .handlers.advanced_feature_extractor import AdvancedFeatureExtractorHandler
 from .handlers.data_splitter import DataSplitterHandler
 from .handlers.data_normalizer import DataNormalizerHandler
 from .handlers.data_exporter import DataExporterHandler
@@ -94,12 +95,12 @@ class PipelineBuilder:
         pipeline = (
             builder
             .add_handler(DataLoaderHandler(input_file, logger))
+            .add_handler(AdvancedFeatureExtractorHandler(logger=logger))
             .add_handler(DataCleanerHandler(
                 drop_duplicates=True,
                 handle_missing='drop',
                 logger=logger
             ))
-            .add_handler(FeatureEngineeringHandler(logger=logger))
             .add_handler(DataSplitterHandler(target_column, logger=logger))
             .add_handler(DataNormalizerHandler(method='standard', logger=logger))
             .add_handler(DataExporterHandler(output_dir, logger=logger))
