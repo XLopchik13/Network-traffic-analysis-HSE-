@@ -1,72 +1,107 @@
-# Network Traffic Analysis Pipeline
+# HH.ru Salary Prediction Pipeline
 
-Пайплайн обработки данных сетевого трафика с использованием паттерна проектирования "Цепочка ответственности" (Chain of Responsibility).
-
-## Описание
-
-Проект реализует чистую архитектуру для обработки данных с полной типизацией, логированием и модульной структурой. Пайплайн преобразует CSV файл с данными в NumPy массивы, готовые для машинного обучения.
+Пайплайн обработки резюме с hh.ru и регрессионная модель для предсказания зарплаты.
+Архитектура основана на паттерне "Цепочка ответственности" (Chain of Responsibility).
 
 ## Структура проекта
 
 ```
 .
-├── app.py                      # Точка входа приложения
-├── src/
-│   ├── __init__.py
-│   ├── pipeline_builder.py    # Построитель пайплайна
-│   ├── core/                   # Базовые классы архитектуры
-│   │   ├── __init__.py
-│   │   ├── handler.py          # Абстрактный обработчик
-│   │   └── pipeline_context.py # Контекст пайплайна
-│   └── handlers/               # Конкретные обработчики
-│       ├── __init__.py
-│       ├── data_loader.py      # Загрузка данных
-│       ├── data_cleaner.py     # Очистка данных
-│       ├── feature_engineering.py  # Инженерия признаков
-│       ├── data_splitter.py    # Разделение на X и y
-│       ├── data_normalizer.py  # Нормализация данных
-│       └── data_exporter.py    # Экспорт в .npy
-└── data/
-    └── hh.csv                  # Исходные данные
+├── app.py                          # Предсказание зарплаты по .npy файлу признаков
+├── train.py                        # Обучение и сохранение модели
+├── run_pipeline.py                 # Запуск пайплайна обработки CSV → .npy
+├── requirements.txt
+├── resources/
+│   └── salary_model.pkl            # Веса модели (генерируется train.py, не в git)
+├── data/
+│   └── hh.csv                      # Исходные данные (не в git)
+└── src/
+    ├── pipeline_builder.py         # Построитель пайплайна
+    ├── core/
+    │   ├── handler.py              # Абстрактный обработчик
+    │   └── pipeline_context.py     # Контекст пайплайна
+    ├── handlers/
+    │   ├── data_loader.py          # Загрузка CSV
+    │   ├── data_cleaner.py         # Очистка данных
+    │   ├── advanced_feature_extractor.py  # Извлечение признаков из резюме
+    │   ├── feature_engineering.py  # Кодирование категориальных признаков
+    │   ├── data_splitter.py        # Разделение на X и y
+    │   ├── data_normalizer.py      # Нормализация
+    │   └── data_exporter.py        # Сохранение в .npy
+    └── model/
+        ├── constants.py            # Константы модели
+        ├── model_trainer.py        # Обучение GradientBoostingRegressor
+        └── salary_predictor.py     # Загрузка модели и инференс
 ```
-
-## Паттерн Chain of Responsibility
-
-Каждый обработчик в цепочке выполняет одну задачу и передает контекст следующему:
-
-1. **DataLoaderHandler** - загружает CSV файл
-2. **DataCleanerHandler** - удаляет дубликаты и пропуски
-3. **FeatureEngineeringHandler** - кодирует категориальные признаки
-4. **DataSplitterHandler** - разделяет на признаки (X) и целевую переменную (y)
-5. **DataNormalizerHandler** - нормализует признаки (стандартизация)
-6. **DataExporterHandler** - сохраняет результат в .npy файлы
 
 ## Требования
 
 - Python 3.8+
-- pandas
-- numpy
+- RAM: ~2 GB (обучение на ~47k сэмплах)
+- CPU: обучение занимает ~10 секунд на современном процессоре
 
 ## Установка
 
 ```bash
-# Создать виртуальное окружение
 python -m venv venv
 
-# Активировать виртуальное окружение (Windows PowerShell)
+# Windows
 .\venv\Scripts\Activate.ps1
 
-# Установить зависимости
+# Linux / macOS
+source venv/bin/activate
+
 pip install -r requirements.txt
 ```
 
 ## Использование
 
+### 1. Подготовка данных (CSV → .npy)
+
 ```bash
-# Запуск пайплайна
-python app.py data/hh.csv
+python run_pipeline.py data/hh.csv
 ```
 
-Команда создаст два файла в директории с исходным CSV:
-- `x_data.npy` - матрица признаков
-- `y_data.npy` - вектор целевой переменной
+Создаёт `data/x_data.npy` и `data/y_data.npy`.
+
+### 2. Обучение модели
+
+```bash
+python train.py data/x_data.npy data/y_data.npy
+```
+
+Сохраняет обученную модель в `resources/salary_model.pkl`.
+Выводит метрики на тестовой выборке (MAE и R²).
+
+### 3. Предсказание зарплаты
+
+```bash
+python app.py data/x_data.npy
+```
+
+Выводит список предсказанных зарплат в рублях:
+
+```
+[40755.62, 69533.0, 73597.62, ...]
+```
+
+Логи уходят в stderr и не мешают stdout-выводу.
+
+## Паттерн Chain of Responsibility
+
+Каждый обработчик выполняет одну задачу и передаёт контекст дальше:
+
+1. **DataLoaderHandler** — загружает CSV
+2. **AdvancedFeatureExtractorHandler** — парсит поля резюме (возраст, опыт, образование и др.)
+3. **DataCleanerHandler** — удаляет дубликаты и пропуски
+4. **DataSplitterHandler** — разделяет на признаки X и таргет y (зарплата)
+5. **DataNormalizerHandler** — стандартизация признаков
+6. **DataExporterHandler** — сохраняет результат в .npy
+
+## Модель
+
+`GradientBoostingRegressor` (scikit-learn) с log-преобразованием таргета:
+
+- Выбросы по зарплате фильтруются (< 5 000 или > 500 000 руб)
+- Таргет логарифмируется (`log1p`) перед обучением, предсказания переводятся обратно (`expm1`)
+- Метрики на тестовой выборке: **MAE ≈ 30 500 руб**, **R² ≈ 0.39**
