@@ -1,9 +1,10 @@
 # HH.ru Resume Analysis
 
-Два независимых ML-модуля поверх одного датасета резюме с hh.ru:
+Три независимых ML-модуля поверх одного датасета резюме с hh.ru:
 
-1. **Регрессия** — предсказание зарплаты (`GradientBoostingRegressor`)
-2. **Классификация** — определение уровня IT-разработчика: junior / middle / senior (`RandomForestClassifier`)
+1. **Регрессия (GBR)** — предсказание зарплаты (`GradientBoostingRegressor`)
+2. **Регрессия (FCN)** — нейросеть для предсказания зарплаты с трекингом в MLflow
+3. **Классификация** — уровень IT-разработчика: junior / middle / senior (`RandomForestClassifier`)
 
 Пайплайн обработки данных построен на паттерне "Цепочка ответственности" (Chain of Responsibility).
 
@@ -20,7 +21,8 @@
 ├── requirements.txt
 │
 ├── resources/
-│   ├── salary_model.pkl                # Веса регрессии (генерируется, не в git)
+│   ├── salary_model.pkl                # Веса GBR (генерируется, не в git)
+│   ├── fcn_model.pt                    # Веса FCN (генерируется, не в git)
 │   └── plots/                          # Графики классификации
 │       ├── class_balance.png
 │       └── feature_importance.png
@@ -42,9 +44,11 @@
     │   ├── data_normalizer.py
     │   └── data_exporter.py
     ├── model/                          # Регрессия зарплаты
-    │   ├── constants.py
-    │   ├── model_trainer.py
-    │   └── salary_predictor.py
+    │   ├── constants.py                # Константы GBR, FCN и MLflow
+    │   ├── model_trainer.py            # Обучение GradientBoostingRegressor
+    │   ├── salary_predictor.py         # Инференс GBR
+    │   ├── fcn_model.py                # PyTorch FCN архитектура
+    │   └── neural_trainer.py           # Обучение FCN + ранняя остановка
     └── classification/                 # Классификация уровня разработчика
         ├── constants.py
         ├── it_filter.py
@@ -59,7 +63,7 @@
 
 - Python 3.8+
 - RAM: ~2 GB (обучение на ~47k сэмплах)
-- CPU: обучение занимает ~10–30 секунд на современном процессоре
+- CPU: GBR — ~10 с, FCN — ~30–60 с (CPU, 45 эпох с early stopping)
 
 ## Установка
 
@@ -109,15 +113,59 @@ python app.py data/x_data.npy
 
 Логи идут в stderr и не мешают stdout-выводу.
 
-### Модель и метрики
+### Модели и метрики
+
+| Параметр | GBR | FCN (нейросеть) |
+|---|---|---|
+| Алгоритм | `GradientBoostingRegressor` | PyTorch, 4 слоя [512→256→128→64] |
+| Таргет | `log1p(salary)` | `log1p(salary)` |
+| Фильтрация выбросов | < 5 000 и > 500 000 руб | < 5 000 и > 500 000 руб |
+| MAE (тест) | ≈ 30 500 руб | ≈ 32 100 руб |
+| R² (тест) | ≈ 0.39 | ≈ 0.38 |
+| Трекинг | — | MLflow |
+
+---
+
+## Модуль 1б — FCN нейросеть + MLflow
+
+### Обучение с трекингом
+
+```bash
+python train_neural.py data/x_data.npy data/y_data.npy
+```
+
+Скрипт:
+- подключается к MLflow-серверу `http://kamnsv.com:55000/`
+- создаёт run в эксперименте **"LIne Regression HH"**
+- логирует гиперпараметры, `r2_score_test`, `mae_test`
+- регистрирует модель как **`petrov_nikita_nikolaevich_fcn`**
+- сохраняет веса локально в `resources/fcn_model.pt`
+- выводит `RUN_ID` в stdout
+
+### Архитектура FCN
+
+```
+Input (36) → Linear(512) → BN → ReLU
+           → Linear(256) → BN → ReLU
+           → Linear(128) → BN → ReLU
+           → Linear(64)  → BN → ReLU
+           → Linear(1)
+```
+
+- Оптимизатор: Adam (lr=5e-4, weight_decay=1e-4)
+- Scheduler: ReduceLROnPlateau (patience=15, factor=0.5)
+- Early stopping: patience=30 эпох
+- Dropout убран — с BN избыточен и вызывал underfitting
+
+### MLflow параметры
 
 | Параметр | Значение |
 |---|---|
-| Алгоритм | `GradientBoostingRegressor` |
-| Таргет | `log1p(salary)`, обратно `expm1` |
-| Фильтрация выбросов | зарплаты < 5 000 и > 500 000 руб удалены |
-| MAE (тест) | ≈ 30 500 руб |
-| R² (тест) | ≈ 0.39 |
+| Tracking URI | `http://kamnsv.com:55000/` |
+| Experiment | `LIne Regression HH` |
+| Model name | `petrov_nikita_nikolaevich_fcn` |
+| Metric | `r2_score_test` |
+| Best RUN_ID | `f5de9c8ec4384a0d809d7c60cde36087` |
 
 ---
 
@@ -167,5 +215,6 @@ python run_classification_poc.py data/hh.csv
 
 ```bash
 python -c "from src.model.salary_predictor import SalaryPredictor; print('OK')"
+python -c "from src.model.fcn_model import FCNModel; print('OK')"
 python -c "from src.classification.developer_classifier import DeveloperClassifier; print('OK')"
 ```
