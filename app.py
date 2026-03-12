@@ -1,84 +1,98 @@
-"""Main application entry point."""
+"""Application entry point for salary prediction.
+
+Loads a feature array produced by the preprocessing pipeline and outputs
+predicted salaries using the trained model stored in resources/.
+
+Usage:
+    python app.py path/to/x_data.npy
+
+Output:
+    [float, float, ...]  — predicted salaries in rubles printed to stdout.
+"""
 
 import sys
 import logging
 from pathlib import Path
-from typing import NoReturn
 
-from src.pipeline_builder import PipelineBuilder
-from src.core.pipeline_context import PipelineContext
+import numpy as np
+
+from src.model.salary_predictor import SalaryPredictor
+from src.model.constants import MODEL_FILENAME, RESOURCES_DIR_NAME
 
 
 def setup_logging() -> logging.Logger:
     """Configure and return the application logger.
-    
+
+    Logs are written to stderr so they do not interfere with prediction output.
+
     Returns:
         Configured logger instance.
     """
     logging.basicConfig(
         level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.StreamHandler(sys.stdout)
-        ]
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        handlers=[logging.StreamHandler(sys.stderr)],
     )
     return logging.getLogger(__name__)
 
 
-def main() -> None:
-    """Main application function.
-    
-    Processes command line arguments and runs the data processing pipeline.
-    Creates x_data.npy and y_data.npy in the same directory as the input file.
-    
-    Usage:
-        python app.py path/to/hh.csv
-    
+def load_features(x_path: Path) -> np.ndarray:
+    """Load a feature array from a .npy file.
+
+    Args:
+        x_path: Path to the .npy feature file produced by the pipeline.
+
+    Returns:
+        2D numpy array of shape (n_samples, n_features).
+
     Raises:
-        SystemExit: If arguments are invalid or processing fails.
+        FileNotFoundError: If the file does not exist.
+        ValueError: If the file does not contain a 2D array.
+    """
+    if not x_path.exists():
+        raise FileNotFoundError(f"Feature file not found: {x_path}")
+
+    if x_path.suffix.lower() != ".npy":
+        raise ValueError(f"Expected a .npy file, got: {x_path}")
+
+    x_data: np.ndarray = np.load(x_path)
+
+    if x_data.ndim != 2:
+        raise ValueError(f"Expected 2D array, got shape {x_data.shape}")
+
+    return x_data
+
+
+def main() -> None:
+    """Load features, run the salary predictor, and print results.
+
+    Raises:
+        SystemExit: If arguments are invalid or prediction fails.
     """
     logger = setup_logging()
 
     if len(sys.argv) != 2:
         logger.error("Invalid arguments")
-        print("Usage: python app.py path/to/hh.csv")
-        sys.exit(1)
-        
-    input_path = Path(sys.argv[1])
-
-    if not input_path.exists():
-        logger.error(f"Input file not found: {input_path}")
-        sys.exit(1)
-        
-    if not input_path.suffix.lower() == '.csv':
-        logger.error(f"Input file must be a CSV file: {input_path}")
+        print("Usage: python app.py path/to/x_data.npy", file=sys.stderr)
         sys.exit(1)
 
-    output_dir = input_path.parent
+    x_path = Path(sys.argv[1])
+    model_path = Path(RESOURCES_DIR_NAME) / MODEL_FILENAME
 
-    logger.info("Starting Network Traffic Analysis Pipeline")
-    logger.info(f"Input file: {input_path}")
-    logger.info(f"Output directory: {output_dir}")
-    
     try:
-        pipeline = PipelineBuilder.create_default_pipeline(
-            input_file=input_path,
-            output_dir=output_dir,
-            target_column='salary',
-            logger=logger
-        )
+        x_data = load_features(x_path)
+        logger.info("Loaded feature array: %s", x_data.shape)
 
-        context = PipelineContext(logger=logger)
-        result_context = pipeline.handle(context)
+        predictor = SalaryPredictor(model_path)
+        predictions = predictor.predict(x_data)
 
-        logger.info("Pipeline completed successfully")
-        logger.info(f"X data saved to: {result_context.get_metadata('x_data_path')}")
-        logger.info(f"Y data saved to: {result_context.get_metadata('y_data_path')}")
-        logger.info(f"X shape: {result_context.x_data.shape if result_context.x_data is not None else 'N/A'}")
-        logger.info(f"Y shape: {result_context.y_data.shape if result_context.y_data is not None else 'N/A'}")
-        
-    except Exception as e:
-        logger.error(f"Pipeline failed: {str(e)}")
+        print([round(float(p), 2) for p in predictions])
+
+    except FileNotFoundError as e:
+        logger.error("File not found: %s", e)
+        sys.exit(1)
+    except ValueError as e:
+        logger.error("Invalid data: %s", e)
         sys.exit(1)
 
 

@@ -172,3 +172,4 @@ pyrightconfig.json
 
 # Project specific
 data/
+resources/*.pkl
